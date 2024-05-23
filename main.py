@@ -75,10 +75,10 @@ def main():
     output_video_frames = tracker.draw_annotations(video_frames, tracks,team_ball_control)
 
     ## Draw Camera movement
-    output_video_frames = camera_movement_estimator.draw_camera_movement(output_video_frames,camera_movement_per_frame)
+    #output_video_frames = camera_movement_estimator.draw_camera_movement(output_video_frames,camera_movement_per_frame)
 
     ## Draw Speed and Distance
-    speed_and_distance_estimator.draw_speed_and_distance(output_video_frames,tracks)
+   # speed_and_distance_estimator.draw_speed_and_distance(output_video_frames,tracks)
 
     # Save video
     save_video(output_video_frames, 'output_videos/output_video.avi')
