@@ -31,9 +31,9 @@ def main():
   single_player_ball_control = {}
 
 
-  video_path = '/content/drive/MyDrive/editing_project/coded_football/input_videos/football_vid.mp4'
+  video_path = '/content/Football_Analysis/input_videos/08fd33_4.mp4'
 
-  tracker = Tracker('/content/drive/MyDrive/editing_project/coded_football/models/best.pt')
+  tracker = Tracker('best.pt')
 
   cap = cv2.VideoCapture(video_path)
   while cap.isOpened():
@@ -144,11 +144,11 @@ def main():
   frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
   frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
   fps = int(cap.get(cv2.CAP_PROP_FPS))
-  output_video_path = '/content/drive/MyDrive/editing_project/coded_football/output_videos'
+  output_video_path = '/content/Football_Analysis/output_videos/'
  
   # Define the codec and create VideoWriter object
   fourcc = cv2.VideoWriter_fourcc(*'XVID')  # You can use other codecs like 'XVID', 'MJPG', etc.
-  out = cv2.VideoWriter("/content/drive/MyDrive/editing_project/coded_football/output_videos/output.avi", fourcc, fps, (frame_width, frame_height))
+  out = cv2.VideoWriter("/content/Football_Analysis/output_videos/08fd33_4.avi", fourcc, fps, (frame_width, frame_height))
 
   while cap.isOpened():
     ret, frame = cap.read()
