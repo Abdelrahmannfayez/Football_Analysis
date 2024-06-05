@@ -37,6 +37,9 @@ class Tracker:
 
         return ball_positions
 
+    def detect_frame(self,frame):
+      return self.model.predict(frame,conf=0.1)
+    
     def detect_frames(self, frames):
         batch_size=20 
         detections = [] 
@@ -61,6 +64,7 @@ class Tracker:
         }
 
         for frame_num, detection in enumerate(detections):
+            
             cls_names = detection.names
             cls_names_inv = {v:k for k,v in cls_names.items()}
 
@@ -171,18 +175,55 @@ class Tracker:
         alpha = 0.4
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-        team_ball_control_till_frame = team_ball_control[:frame_num+1]
+        team_ball_control_till_frame = team_ball_control[0:frame_num+1]
         # Get the number of time each team had ball control
         team_1_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==1].shape[0]
         team_2_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==2].shape[0]
-        team_1 = team_1_num_frames/(team_1_num_frames+team_2_num_frames)
-        team_2 = team_2_num_frames/(team_1_num_frames+team_2_num_frames)
+        # print(team_ball_control_till_frame)
+        # print(team_ball_control_till_frame[team_ball_control_till_frame==1])
+        # print( team_ball_control_till_frame[team_ball_control_till_frame==1].shape)
+        # print(team_1_num_frames)
+        # print(team_2_num_frames)
+        if team_1_num_frames+team_2_num_frames >0:
+          team_1 = team_1_num_frames/(team_1_num_frames+team_2_num_frames)
+          team_2 = team_2_num_frames/(team_1_num_frames+team_2_num_frames)
+        else:
+          team_1 = 0
+          team_2 = 0
 
         cv2.putText(frame, f"Team 1 Ball Control: {team_1*100:.2f}%",(1400,900), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 3)
         cv2.putText(frame, f"Team 2 Ball Control: {team_2*100:.2f}%",(1400,950), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 3)
 
         return frame
 
+    def draw_frame_annotations(self,video_frame,frame_num, tracks,team_ball_control):
+          frame = video_frame.copy()
+
+          player_dict = tracks["players"][frame_num]
+          ball_dict = tracks["ball"][frame_num]
+          referee_dict = tracks["referees"][frame_num]
+
+          # Draw Players
+          for track_id, player in player_dict.items():
+              color = player.get("team_color",(0,0,255))
+              frame = self.draw_ellipse(frame, player["bbox"],color, track_id)
+
+              if player.get('has_ball',False):
+                  frame = self.draw_traingle(frame, player["bbox"],(0,0,255))
+
+          # Draw Referee
+          for _, referee in referee_dict.items():
+              frame = self.draw_ellipse(frame, referee["bbox"],(0,255,255))
+          
+          # Draw ball 
+          for track_id, ball in ball_dict.items():
+              frame = self.draw_traingle(frame, ball["bbox"],(0,255,0))
+
+
+          # Draw Team Ball Control
+          frame = self.draw_team_ball_control(frame, frame_num, team_ball_control)
+
+          return frame    
     def draw_annotations(self,video_frames, tracks,team_ball_control):
         output_video_frames= []
         for frame_num, frame in enumerate(video_frames):
