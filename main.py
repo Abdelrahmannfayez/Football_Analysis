@@ -108,6 +108,8 @@ def main(input_folder, json_path):
 
     output_folder = 'Frames_OUT'
     output_json_path="jsonfile_OUT"
+    if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
 
     tracker = Tracker('best.pt')
 
