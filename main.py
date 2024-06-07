@@ -17,7 +17,6 @@ import re
 import cv2
 import numpy as np
 
-
 def get_team_in_possession(frame_num, team_ball_control):
     if frame_num < len(team_ball_control):
         team = team_ball_control[frame_num]
@@ -28,17 +27,14 @@ def get_team_in_possession(frame_num, team_ball_control):
     return 'no-team'
 
 def update_json_with_team_info(json_path, output_json_path, team_ball_control):
-    # Load JSON file
     with open(json_path, 'r') as file:
         events = json.load(file)
 
-    # Update each event with the team in possession
     for event in events:
         frame_num = event['frame']
         team = get_team_in_possession(frame_num, team_ball_control)
         event['team'] = team
 
-    # Save the updated JSON file
     with open(output_json_path, 'w') as file:
         json.dump(events, file, indent=4)
 
@@ -95,12 +91,6 @@ def process_image(image, frame_num, tracker, team_assigner, tracks, single_playe
     return first_frame
 
 def main(input_folder, json_path):
-    tracks = {
-        "players": [],
-        "referees": [],
-        "ball": []
-    }
-
     frame_num = 0
     team_assigner = TeamAssigner()
     first_frame = None
@@ -112,6 +102,8 @@ def main(input_folder, json_path):
         os.makedirs(output_folder)
 
     tracker = Tracker('best.pt')
+    player_assigner = PlayerBallAssigner()
+    team_ball_control = [0]
 
     frame_files = sorted([f for f in os.listdir(input_folder) if f.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))], key=lambda x: extract_frame_number(x))
 
@@ -122,19 +114,16 @@ def main(input_folder, json_path):
         if frame is None:
             continue
 
+        tracks = {
+            "players": [],
+            "referees": [],
+            "ball": []
+        }
+
         first_frame = process_image(frame, frame_num, tracker, team_assigner, tracks, single_player_ball_control, first_frame)
-        frame_num += 1
-
-    tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
-    passes = {1: 0, 2: 0}
-    ball_cut = {1: 0, 2: 0}
-    previous_assigned_player = -1
-    player_assigner = PlayerBallAssigner()
-    team_ball_control = [0]
-
-    for frame_num, player_track in enumerate(tracks['players']):
+        
         ball_box = tracks['ball'][frame_num][1]['bbox']
-        assigned_player = player_assigner.assign_ball_to_player(player_track, ball_box)
+        assigned_player = player_assigner.assign_ball_to_player(tracks['players'][frame_num], ball_box)
 
         if assigned_player != -1:
             tracks['players'][frame_num][assigned_player]['has_ball'] = True
@@ -154,22 +143,16 @@ def main(input_folder, json_path):
 
         previous_assigned_player = assigned_player
 
-    team_ball_control = np.array(team_ball_control)
-
-    for frame_num, frame_file in enumerate(frame_files):
-        frame_path = os.path.join(input_folder, frame_file)
-        frame = cv2.imread(frame_path)
-
-        if frame is None:
-            continue
-
         frame = tracker.draw_frame_annotations(frame, frame_num, tracks, team_ball_control.copy())
         output_path = os.path.join(output_folder, frame_file)
         cv2.imwrite(output_path, frame)
 
         if (frame_num + 1) % 100 == 0:
             print(f'Processed {frame_num + 1} frames')
+
+        frame_num += 1
     
+    team_ball_control = np.array(team_ball_control)
     update_json_with_team_info(json_path, output_json_path, team_ball_control)
 
     print('T1 passes:', passes[1])
@@ -186,9 +169,7 @@ def main(input_folder, json_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video frames and update JSON with team possession.")
     parser.add_argument('input_folder', type=str, help='Path to the folder containing input frames.')
-    #parser.add_argument('output_folder', type=str, help='Path to the folder to save output frames.')
     parser.add_argument('json_path', type=str, help='Path to the input JSON file.')
-    #parser.add_argument('output_json_path', type=str, help='Path to save the updated JSON file.')
     
     args = parser.parse_args()
     
