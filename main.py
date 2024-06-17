@@ -12,11 +12,8 @@ import numpy as np
 import pandas as pd
 import sys 
 import json
-import os
 import re
-import cv2
-import numpy as np
-
+from skimage.metrics import structural_similarity as compare_ssim
 
 def get_team_in_possession(frame_num, team_ball_control):
     if frame_num < len(team_ball_control):
@@ -28,17 +25,14 @@ def get_team_in_possession(frame_num, team_ball_control):
     return 'no-team'
 
 def update_json_with_team_info(json_path, output_json_path, team_ball_control):
-    # Load JSON file
     with open(json_path, 'r') as file:
         events = json.load(file)
 
-    # Update each event with the team in possession
     for event in events:
         frame_num = event['frame']
         team = get_team_in_possession(frame_num, team_ball_control)
         event['team'] = team
 
-    # Save the updated JSON file
     with open(output_json_path, 'w') as file:
         json.dump(events, file, indent=4)
 
@@ -47,6 +41,14 @@ def extract_frame_number(filename):
     if match:
         return int(match.group(1))
     return None
+
+def detect_scene_change(prev_frame, curr_frame, threshold=0.5):
+    if prev_frame is None:
+        return False
+    prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+    (score, _) = compare_ssim(prev_gray, curr_gray, full=True)
+    return score < threshold
 
 def process_image(image, frame_num, tracker, team_assigner, tracks, single_player_ball_control, first_frame):
     detection = tracker.model.predict(image, conf=0.1)
@@ -83,13 +85,21 @@ def process_image(image, frame_num, tracker, team_assigner, tracks, single_playe
 
     if frame_num == 0:
         first_frame = image
-        team_assigner.assign_team_color(image, tracks['players'][0])
+        if tracks['players'][0]:  # Ensure there are player detections in the first frame
+            team_assigner.assign_team_color(image, tracks['players'][0])
+        else:
+            print("Warning: No player detections in the first frame for team assignment")
 
     player_track = tracks['players'][frame_num]
     for player_id, track in player_track.items():
         team = team_assigner.get_player_team(image, track['bbox'], player_id)
-        tracks['players'][frame_num][player_id]['team'] = team
-        tracks['players'][frame_num][player_id]['team_color'] = team_assigner.team_colors[team]
+        if team is not None:
+            tracks['players'][frame_num][player_id]['team'] = team
+            tracks['players'][frame_num][player_id]['team_color'] = team_assigner.team_colors.get(team, [0, 0, 0])
+        else:
+            # Handle the case where team assignment cannot be performed
+            tracks['players'][frame_num][player_id]['team'] = 'unknown'
+            tracks['players'][frame_num][player_id]['team_color'] = [0, 0, 0]  # Default color or handle appropriately
         single_player_ball_control[player_id] = 0
 
     return first_frame
@@ -105,9 +115,10 @@ def main(input_folder, json_path):
     team_assigner = TeamAssigner()
     first_frame = None
     single_player_ball_control = {}
+    prev_frame = None
 
     output_folder = 'Frames_OUT'
-    output_json_path="jsonfile_OUT"
+    output_json_path = "jsonfile_OUT"
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
@@ -122,7 +133,16 @@ def main(input_folder, json_path):
         if frame is None:
             continue
 
+        if detect_scene_change(prev_frame, frame):
+            tracker = Tracker('best.pt')  # Reset the tracker
+            print(f'Scene change detected at frame {frame_num}, resetting tracker.')
+
+            # Ensure kmeans is reinitialized after scene change
+            if tracks['players'][frame_num - 1]:  # Ensure there were player detections in the previous frame
+                team_assigner.assign_team_color(frame, tracks['players'][frame_num - 1])
+
         first_frame = process_image(frame, frame_num, tracker, team_assigner, tracks, single_player_ball_control, first_frame)
+        prev_frame = frame.copy()
         frame_num += 1
 
     tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
@@ -140,15 +160,19 @@ def main(input_folder, json_path):
             tracks['players'][frame_num][assigned_player]['has_ball'] = True
             single_player_ball_control[assigned_player] += 1
 
+            current_player_team = tracks['players'][frame_num][assigned_player]['team']
             if assigned_player != previous_assigned_player and previous_assigned_player != -1:
-                current_player_team = tracks['players'][frame_num][assigned_player]['team']
                 previous_player_team = team_ball_control[-1]
-                if current_player_team == previous_player_team:
-                    passes[current_player_team] += 1
-                else:
-                    ball_cut[current_player_team] += 1
+                if current_player_team in passes and previous_player_team in passes:
+                    if current_player_team == previous_player_team:
+                        passes[current_player_team] += 1
+                    else:
+                        ball_cut[current_player_team] += 1
 
-            team_ball_control.append(tracks['players'][frame_num][assigned_player]['team'])
+            if current_player_team in passes:
+                team_ball_control.append(current_player_team)
+            else:
+                team_ball_control.append('unknown')
         else:
             team_ball_control.append(team_ball_control[-1])
 
@@ -186,9 +210,7 @@ def main(input_folder, json_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video frames and update JSON with team possession.")
     parser.add_argument('input_folder', type=str, help='Path to the folder containing input frames.')
-    #parser.add_argument('output_folder', type=str, help='Path to the folder to save output frames.')
     parser.add_argument('json_path', type=str, help='Path to the input JSON file.')
-    #parser.add_argument('output_json_path', type=str, help='Path to save the updated JSON file.')
     
     args = parser.parse_args()
     
